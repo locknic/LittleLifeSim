@@ -24,8 +24,8 @@ public class TextDisplay {
     // Visual properties
     private static final float OFFSET_X = 5f;
     private static final float OFFSET_Y = 15f;
-    private static final float CHAR_WIDTH = 6f;
-    private static final float CHAR_HEIGHT = 8f;
+    private static final float CHAR_WIDTH = 12f;
+    private static final float CHAR_HEIGHT = 16f;
     private static final float BOLD_THICKNESS = 2f;
     
     static {

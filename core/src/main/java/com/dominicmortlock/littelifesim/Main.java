@@ -66,20 +66,40 @@ public class Main extends ApplicationAdapter {
         float mouseY = WINDOW_HEIGHT - Gdx.input.getY(); // Flip Y coordinate (LibGDX uses bottom-left origin)
         
         if (Gdx.input.justTouched()) {
-            // Check draggable entities in priority order (ball first, then little guy, then bed)
+            // Check draggable entities in priority order
             Draggable clickedEntity = null;
             
-            // Check ball first (higher priority)
+            System.out.println("=== CLICK DEBUG ===");
+            System.out.println("Mouse: (" + mouseX + ", " + mouseY + ")");
+            System.out.println("LittleGuy state: " + littleGuy.getCurrentState());
+            System.out.println("Ball inside: " + ball.isPointInside(mouseX, mouseY));
+            System.out.println("LittleGuy inside: " + littleGuy.isPointInside(mouseX, mouseY));
+            System.out.println("Bed inside: " + bed.isPointInside(mouseX, mouseY));
+            System.out.println("Bed occupied: " + bed.isOccupied());
+            
+            // Check ball first (highest priority)
             if (ball.isPointInside(mouseX, mouseY)) {
                 clickedEntity = ball;
+                System.out.println("Selected: BALL");
             }
-            // Then check little guy
+            // Special case: if little guy is being carried by bed, prioritize bed over little guy
+            else if (littleGuy.getCurrentState() == State.CARRIED_BY_BED && bed.isPointInside(mouseX, mouseY)) {
+                clickedEntity = bed;
+                System.out.println("Selected: BED (carrying player)");
+            }
+            // Then check little guy (normal priority)
             else if (littleGuy.isPointInside(mouseX, mouseY)) {
                 clickedEntity = littleGuy;
+                System.out.println("Selected: LITTLE_GUY");
             }
-            // Then check bed
+            // Finally check bed (lowest priority, unless carrying player)
             else if (bed.isPointInside(mouseX, mouseY)) {
                 clickedEntity = bed;
+                System.out.println("Selected: BED (normal)");
+            }
+            
+            if (clickedEntity == null) {
+                System.out.println("Selected: NOTHING");
             }
             
             if (clickedEntity != null) {

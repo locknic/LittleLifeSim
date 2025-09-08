@@ -6,7 +6,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
  * A physics-enabled ball that can be dragged, thrown, caught by LittleGuy, and bounces around.
  * Supports multiple states including free, picked up, carried, and being caught.
  */
-public class Ball extends Entity implements Draggable {
+public class Ball extends Entity implements Draggable, Holdable {
     private BallState currentState;
     private DraggableComponent draggableComponent;
     private PhysicsComponent physicsComponent;
@@ -43,9 +43,16 @@ public class Ball extends Entity implements Draggable {
             transitionTimer += deltaTime;
             float progress = Math.min(transitionTimer / transitionDuration, 1.0f);
             
-            // Calculate target position
-            targetX = carrier.getX() - width / 2; // Centered on left edge
-            targetY = carrier.getY() + carrier.getHeight() / 2 - height / 2; // Halfway up
+            // Calculate target position using holding system
+            if (carrier instanceof Holder) {
+                float[] targetPos = ((Holder) carrier).getHoldingPosition(this);
+                targetX = targetPos[0];
+                targetY = targetPos[1];
+            } else {
+                // Fallback for backwards compatibility
+                targetX = carrier.getX() - width / 2; // Centered on left edge
+                targetY = carrier.getY() + carrier.getHeight() / 2 - height / 2; // Halfway up
+            }
             
             // Smooth interpolation with easing
             float easeProgress = 1f - (1f - progress) * (1f - progress); // Ease out
@@ -62,10 +69,20 @@ public class Ball extends Entity implements Draggable {
         
         // Update position if being carried (only if not in physics mode)
         if (currentState == BallState.CARRIED && carrier != null && !physicsComponent.isActive()) {
-            // Position ball centered on left side of carrier, halfway up
-            float carrierX = carrier.getX() - width / 2; // Centered on left edge
-            float carrierY = carrier.getY() + carrier.getHeight() / 2 - height / 2; // Halfway up
-            setPosition(carrierX, carrierY);
+            // Use unified holding system for positioning
+            if (carrier instanceof Holder) {
+                HoldingSystem.updateHeldPosition((Holder) carrier);
+            } else {
+                // Fallback to old positioning for backwards compatibility
+                float carrierX = carrier.getX() - width / 2; // Centered on left edge
+                float carrierY = carrier.getY() + carrier.getHeight() / 2 - height / 2; // Halfway up
+                setPosition(carrierX, carrierY);
+            }
+        }
+        
+        // Check for snap attachment every frame if ball is free and physics isn't active
+        if (currentState == BallState.FREE && !physicsComponent.isActive()) {
+            checkForImmediatePlayerAttachment();
         }
     }
     
@@ -107,32 +124,49 @@ public class Ball extends Entity implements Draggable {
             carrier = null;
         }
         currentState = BallState.PICKED_UP;
-        physicsComponent.stop(); // Stop any physics when picked up
-        draggableComponent.startDrag();
+        DragDropHelper.onDragStart(physicsComponent, draggableComponent);
     }
     
     @Override
     public void onDragStop() {
-        // Get actual drag velocity for throwing
-        float throwVelocityX = draggableComponent.getDragVelocityX();
-        float throwVelocityY = draggableComponent.getDragVelocityY();
-        
-        // Scale velocity for more realistic throwing (reduce excessive speeds)
-        throwVelocityX *= 0.27f; // About 1/3 power
-        throwVelocityY *= 0.27f;
-        
-        // Ensure minimum upward velocity for satisfying throws
-        if (throwVelocityY < 50f) {
-            throwVelocityY = 50f + (float) Math.random() * 50f;
-        }
-        
         currentState = BallState.FREE;
-        draggableComponent.stopDrag();
+        DragDropHelper.onDragStop(physicsComponent, draggableComponent, 
+                                 DragDropHelper.VelocityScales.BALL, 
+                                 DragDropHelper.MinThrowVelocities.BALL);
         
-        // Launch with physics if there's significant velocity
-        if (Math.abs(throwVelocityX) > 20f || Math.abs(throwVelocityY) > 20f) {
-            physicsComponent.launch(throwVelocityX, throwVelocityY);
+        // Check for immediate attachment to nearby player
+        checkForImmediatePlayerAttachment();
+    }
+    
+    private void checkForImmediatePlayerAttachment() {
+        if (map == null || currentState != BallState.FREE) return;
+        
+        // Check all entities for nearby LittleGuy
+        for (Entity entity : map.getEntities()) {
+            if (entity instanceof LittleGuy) {
+                LittleGuy littleGuy = (LittleGuy) entity;
+                
+                boolean isNear = isNearEntity(littleGuy, 40f); // Increase snap distance
+                boolean canPickup = littleGuy.getCurrentState() == State.IDLE || 
+                                   littleGuy.getCurrentState() == State.WALKING || 
+                                   littleGuy.getCurrentState() == State.SLEEPING;
+                
+                // Check if ball is close enough and player can pick it up
+                if (isNear && canPickup) {
+                    System.out.println("=== BALL SNAP ATTACHMENT TRIGGERED ===");
+                    // Use the holding system for instant attachment
+                    HoldingSystem.startHolding(littleGuy, this);
+                    break; // Only attach to one player
+                }
+            }
         }
+    }
+    
+    private boolean isNearEntity(Entity entity, float margin) {
+        return entity.getX() - margin < x + width &&
+               entity.getX() + entity.getWidth() + margin > x &&
+               entity.getY() - margin < y + height &&
+               entity.getY() + entity.getHeight() + margin > y;
     }
     
     // Ball-specific methods
@@ -188,5 +222,33 @@ public class Ball extends Entity implements Draggable {
     
     public BallState getCurrentState() {
         return currentState;
+    }
+    
+    // Holdable interface implementation
+    @Override
+    public void startBeingHeld(Holder holder) {
+        if (holder instanceof Entity) {
+            startCarried((Entity) holder);
+        }
+    }
+    
+    @Override
+    public void releaseFromHolder() {
+        stopCarried();
+    }
+    
+    @Override
+    public void dropWithPhysics() {
+        dropWithArc();
+    }
+    
+    @Override
+    public Holder getCurrentHolder() {
+        return (carrier instanceof Holder) ? (Holder) carrier : null;
+    }
+    
+    @Override
+    public boolean isBeingHeld() {
+        return carrier != null && currentState == BallState.CARRIED;
     }
 }

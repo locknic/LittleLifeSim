@@ -7,7 +7,7 @@ import java.util.Random;
  * An autonomous character that can walk around, sleep, carry balls, and be dragged by the player.
  * Features a state machine with behaviors like idle, walking, sleeping, and throwing.
  */
-public class LittleGuy extends Entity implements Draggable {
+public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
     private State currentState;
     private float stateTimer;
     private float targetX;
@@ -76,6 +76,10 @@ public class LittleGuy extends Entity implements Draggable {
         switch (currentState) {
             case IDLE:
                 updateIdleState();
+                // Check for snap attachment to beds when idle and physics isn't active
+                if (!physicsComponent.isActive()) {
+                    checkForImmediateBedAttachment();
+                }
                 break;
             case WALKING:
                 updateWalkingState(deltaTime);
@@ -163,7 +167,9 @@ public class LittleGuy extends Entity implements Draggable {
         for (Entity entity : map.getEntities()) {
             if (entity instanceof Bed) {
                 Bed bed = (Bed) entity;
-                if (!bed.isOccupied() && bed.isNearby(this, BED_INTERACTION_MARGIN)) {
+                if (!bed.isOccupied() && 
+                    !bed.getDraggableComponent().isBeingDragged() && 
+                    bed.isNearby(this, BED_INTERACTION_MARGIN)) {
                     startSleepingInBed(bed);
                     break; // Only use one bed at a time
                 }
@@ -204,20 +210,35 @@ public class LittleGuy extends Entity implements Draggable {
         startIdling();
     }
     
+    public void releaseFromBed() {
+        System.out.println("=== LITTLE GUY RELEASE FROM BED ===");
+        System.out.println("Current state: " + currentState);
+        System.out.println("Current bed: " + (currentBed != null ? "exists" : "null"));
+        
+        // Clear bed reference without calling back to bed (avoid circular calls)
+        currentBed = null;
+        bedCooldown = BED_COOLDOWN_TIME; // Start cooldown
+        startIdling();
+        
+        System.out.println("After release - new state: " + currentState);
+    }
+    
     private void updateCarriedByBedState() {
-        // If bed stops being dragged or moves away, exit this state
-        if (currentBed == null || !currentBed.getDraggableComponent().isBeingDragged()) {
-            // Exit carried state
-            if (currentBed != null) {
-                currentBed.setOccupied(false, null);
-                currentBed = null;
-            }
+        // Only release if bed is null (bed explicitly released us via onDragStart)
+        // Don't release just because bed stops being dragged - that breaks snap-to-bed
+        if (currentBed == null) {
+            System.out.println("=== CARRIED BY BED: Bed was released, exiting state ===");
             bedCooldown = BED_COOLDOWN_TIME; // Start cooldown
             startIdling();
         } else {
-            // Stay positioned on the bed
-            float[] bedPosition = currentBed.getSleepingPosition(this);
-            setPosition(bedPosition[0], bedPosition[1]);
+            // Stay positioned on the bed using unified holding system
+            if (currentBed instanceof Holder) {
+                HoldingSystem.updateHeldPosition((Holder) currentBed);
+            } else {
+                // Fallback for backwards compatibility
+                float[] bedPosition = currentBed.getSleepingPosition(this);
+                setPosition(bedPosition[0], bedPosition[1]);
+            }
         }
     }
     
@@ -418,42 +439,65 @@ public class LittleGuy extends Entity implements Draggable {
         }
         // If being carried by bed, release from bed
         else if (currentState == State.CARRIED_BY_BED) {
+            System.out.println("=== PLAYER DRAG START: Releasing from bed ===");
             if (currentBed != null) {
+                System.out.println("Setting bed unoccupied and clearing bed reference");
                 currentBed.setOccupied(false, null);
                 currentBed = null;
             }
             bedCooldown = BED_COOLDOWN_TIME;
+            System.out.println("Player released from bed due to drag start");
         }
         
         currentState = State.PICKED_UP;
         stateTimer = 0f;
         trailEmitter.setActive(false);
         
-        // Drop any carried ball when picked up
-        dropBall();
+        // Drop any carried ball when picked up (use new system)
+        onHolderDragStart();
         
-        draggableComponent.startDrag();
+        DragDropHelper.onDragStart(physicsComponent, draggableComponent);
         textDisplay.setMood("?", 0.7f, 1f); // 70% chance when picked up, 1s duration
     }
     
     @Override
     public void onDragStop() {
-        // Get throw velocity from draggable component (very reduced power for LittleGuy)
-        float throwVelocityX = draggableComponent.getDragVelocityX() * 0.03f; // 90% less than before
-        float throwVelocityY = draggableComponent.getDragVelocityY() * 0.03f;
-        
-        // Ensure minimum upward velocity for throwing
-        if (Math.abs(throwVelocityX) > 20f || Math.abs(throwVelocityY) > 20f) {
-            throwVelocityY = Math.max(throwVelocityY, 60f); // Minimum upward throw
-            physicsComponent.launch(throwVelocityX, throwVelocityY);
-        }
-        
-        draggableComponent.stopDrag();
+        DragDropHelper.onDragStop(physicsComponent, draggableComponent, 
+                                 DragDropHelper.VelocityScales.LITTLE_GUY, 
+                                 DragDropHelper.MinThrowVelocities.LITTLE_GUY);
         startIdling();
         
         // Drop any carried ball when we get thrown
         if (carriedBall != null) {
             dropBall();
+        }
+        
+        // Check for immediate attachment to nearby bed
+        checkForImmediateBedAttachment();
+    }
+    
+    private void checkForImmediateBedAttachment() {
+        if (map == null) return;
+        // Remove bedCooldown check for snap attachments - allow immediate snapping
+        
+        // Check all entities for nearby beds
+        for (Entity entity : map.getEntities()) {
+            if (entity instanceof Bed) {
+                Bed bed = (Bed) entity;
+                
+                boolean isNear = bed.isNearby(this, 35f); // Increase snap distance
+                boolean canAttach = !bed.isHolding() && 
+                                   !bed.getDraggableComponent().isBeingDragged() &&
+                                   currentState == State.IDLE;
+                
+                // Check if player is close enough and bed can hold them
+                if (isNear && canAttach) {
+                    System.out.println("=== PLAYER BED SNAP ATTACHMENT TRIGGERED ===");
+                    // Use the holding system for instant attachment
+                    HoldingSystem.startHolding(bed, this);
+                    break; // Only attach to one bed
+                }
+            }
         }
     }
     
@@ -499,5 +543,85 @@ public class LittleGuy extends Entity implements Draggable {
         
         // Render text display
         textDisplay.render(shapeRenderer);
+    }
+    
+    public PhysicsComponent getPhysicsComponent() {
+        return physicsComponent;
+    }
+    
+    // Holder interface implementation (for holding balls)
+    @Override
+    public void pickupHoldable(Holdable holdable) {
+        if (holdable instanceof Ball) {
+            pickupBall((Ball) holdable);
+        }
+    }
+    
+    @Override
+    public void dropHeldEntity() {
+        dropBall();
+    }
+    
+    @Override
+    public Holdable getHeldEntity() {
+        return (carriedBall instanceof Holdable) ? (Holdable) carriedBall : null;
+    }
+    
+    @Override
+    public boolean isHolding() {
+        return carriedBall != null;
+    }
+    
+    @Override
+    public float[] getHoldingPosition(Holdable holdable) {
+        // Position ball at player's position (x=0 relative) and halfway up (y=0.5*height relative)
+        // This matches the original Ball positioning: centered on left edge, halfway up
+        if (holdable instanceof Ball) {
+            Ball ball = (Ball) holdable;
+            float ballX = getX() - ball.getWidth() / 2; // Centered on left edge of player
+            float ballY = getY() + height / 2 - ball.getHeight() / 2; // Halfway up player, centered on ball
+            return new float[]{ballX, ballY};
+        }
+        // Default positioning for other holdables
+        return new float[]{getX(), getY() + height / 2};
+    }
+    
+    @Override
+    public void onHolderDragStart() {
+        dropBall();
+    }
+    
+    // Holdable interface implementation (for being held by beds)
+    @Override
+    public void startBeingHeld(Holder holder) {
+        if (holder instanceof Bed) {
+            startBeingCarriedByBed((Bed) holder);
+        }
+    }
+    
+    @Override
+    public void releaseFromHolder() {
+        releaseFromBed();
+    }
+    
+    @Override
+    public void dropWithPhysics() {
+        // Player uses physics component for drops
+        if (physicsComponent != null) {
+            physicsComponent.launch(
+                (float)(Math.random() - 0.5) * 200, // Random horizontal velocity -100 to +100
+                100 + (float)Math.random() * 100     // Upward velocity 100-200
+            );
+        }
+    }
+    
+    @Override
+    public Holder getCurrentHolder() {
+        return (currentBed instanceof Holder) ? (Holder) currentBed : null;
+    }
+    
+    @Override
+    public boolean isBeingHeld() {
+        return currentState == State.CARRIED_BY_BED;
     }
 }
