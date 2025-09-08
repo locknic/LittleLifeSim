@@ -30,7 +30,10 @@ public class Bed extends Entity implements Draggable, Holder {
         draggableComponent.update(deltaTime);
         physicsComponent.update(deltaTime);
         
-        // Removed player pickup during dragging - bed should only drop, not pick up
+        // Update drag physics if being dragged (same pattern as ball and player)
+        if (draggableComponent.isBeingDragged()) {
+            draggableComponent.updateDrag(deltaTime);
+        }
     }
     
     @Override
@@ -38,7 +41,7 @@ public class Bed extends Entity implements Draggable, Holder {
         // Use RenderUtils for rotation support
         float rotation = draggableComponent.getRotation();
         float pivotX = x + width / 2; // Center X
-        float pivotY = y + height / 2; // Center Y
+        float pivotY = y + height * 0.8f; // Upper portion (headboard grab point)
         
         // Draw bed frame (dark brown/black)
         shapeRenderer.setColor(0.2f, 0.1f, 0.05f, 1f); // Dark brown
@@ -64,6 +67,7 @@ public class Bed extends Entity implements Draggable, Holder {
     public Entity getOccupant() {
         return occupant;
     }
+    
     
     /**
      * Checks if an entity is close enough to interact with the bed

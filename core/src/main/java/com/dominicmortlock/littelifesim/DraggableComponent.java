@@ -148,7 +148,7 @@ public class DraggableComponent {
         
         // Add angular velocity toward target rotation
         float rotationDiff = targetRotation - rotation;
-        angularVelocity += rotationDiff * 25f * deltaTime; // Much stronger spring-like behavior
+        angularVelocity += rotationDiff * 80f * deltaTime; // Strong spring force for immediate response
         
         // Update last drag position
         lastDragX = owner.getX();
