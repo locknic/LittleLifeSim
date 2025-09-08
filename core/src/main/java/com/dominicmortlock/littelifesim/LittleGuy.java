@@ -24,26 +24,24 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
     private Bed currentBed; // Bed currently being used for sleeping
     private float bedCooldown; // Cooldown after leaving bed to prevent immediate re-entry
     
-    // Movement and timing constants
-    private static final float WALK_SPEED = 50f;
-    private static final float MIN_IDLE_TIME = 3f;
-    private static final float MAX_IDLE_TIME = 10f;
-    private static final float MIN_SLEEP_TIME = 10f;
-    private static final float MAX_SLEEP_TIME = 15f;
-    private static final float PICKUP_COOLDOWN_TIME = 2f;
-    private static final float THROW_ANIMATION_TIME = 0.5f;
-    
-    // Behavior probabilities
-    private static final float THROW_PROBABILITY_WITH_BALL = 0.4f;
-    private static final float SLEEP_PROBABILITY_WITHOUT_BALL = 0.2f;
-    private static final float COLLISION_MARGIN = 5f;
-    private static final float BED_INTERACTION_MARGIN = 10f;
-    private static final float BED_SLEEP_TIME = 60f; // 60 seconds in bed
-    private static final float BED_COOLDOWN_TIME = 10f; // 10 seconds before can use bed again
+    // Use constants from GameConstants where available
+    private static final float WALK_SPEED = GameConstants.WALK_SPEED;
+    private static final float MIN_IDLE_TIME = GameConstants.MIN_IDLE_TIME;
+    private static final float MAX_IDLE_TIME = GameConstants.MAX_IDLE_TIME;
+    private static final float MIN_PONDER_TIME = GameConstants.MIN_PONDER_TIME;
+    private static final float MAX_PONDER_TIME = GameConstants.MAX_PONDER_TIME;
+    private static final float PICKUP_COOLDOWN_TIME = GameConstants.PICKUP_COOLDOWN_TIME;
+    private static final float THROW_ANIMATION_TIME = GameConstants.THROW_ANIMATION_TIME;
+    private static final float THROW_PROBABILITY_WITH_BALL = GameConstants.THROW_PROBABILITY_WITH_BALL;
+    private static final float PONDER_PROBABILITY_WITHOUT_BALL = GameConstants.PONDER_PROBABILITY_WITHOUT_BALL;
+    private static final float COLLISION_MARGIN = GameConstants.COLLISION_MARGIN;
+    private static final float BED_INTERACTION_MARGIN = GameConstants.BED_INTERACTION_MARGIN;
+    private static final float BED_SLEEP_TIME = GameConstants.BED_SLEEP_TIME;
+    private static final float BED_COOLDOWN_TIME = GameConstants.BED_COOLDOWN_TIME;
     
     
     public LittleGuy(float x, float y) {
-        super(x, y, 40, 60, 0f); // Z=0 (middle layer)
+        super(x, y, GameConstants.LITTLE_GUY_WIDTH, GameConstants.LITTLE_GUY_HEIGHT, GameConstants.Z_MIDDLE_LAYER);
         this.currentState = State.IDLE;
         this.stateTimer = 0f;
         this.speed = WALK_SPEED;
@@ -76,10 +74,6 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
         switch (currentState) {
             case IDLE:
                 updateIdleState();
-                // Check for snap attachment to beds when idle and physics isn't active
-                if (!physicsComponent.isActive()) {
-                    checkForImmediateBedAttachment();
-                }
                 break;
             case WALKING:
                 updateWalkingState(deltaTime);
@@ -90,14 +84,11 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
             case THROWING:
                 updateThrowingState(deltaTime);
                 break;
-            case SLEEPING:
-                updateSleepingState();
+            case PONDERING:
+                updatePonderingState();
                 break;
             case SLEEPING_IN_BED:
                 updateSleepingInBedState();
-                break;
-            case CARRIED_BY_BED:
-                updateCarriedByBedState();
                 break;
         }
         
@@ -112,8 +103,8 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
         // Check for ball pickup when not being dragged and cooldown expired
         // Check more frequently for better collision detection
         if (currentState != State.PICKED_UP && currentState != State.THROWING && 
-            currentState != State.SLEEPING && currentState != State.SLEEPING_IN_BED && 
-            currentState != State.CARRIED_BY_BED && carriedBall == null && pickupCooldown <= 0f) {
+            currentState != State.PONDERING && currentState != State.SLEEPING_IN_BED && 
+            carriedBall == null && pickupCooldown <= 0f) {
             checkForBallPickup();
         }
         
@@ -121,6 +112,12 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
         if ((currentState == State.IDLE || currentState == State.WALKING) && 
             currentBed == null && bedCooldown <= 0f) {
             checkForBedInteraction();
+        }
+        
+        // Check for bed snapping when not in bed and physics isn't active (like ball snapping)
+        if (currentBed == null && !physicsComponent.isActive() && 
+            currentState != State.PICKED_UP && currentState != State.SLEEPING_IN_BED) {
+            checkForImmediateBedSleep(); // Return value not needed for continuous checking
         }
     }
     
@@ -143,9 +140,9 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
             // Clear stale ball reference
             carriedBall = null;
             
-            // Without ball: sleep or walk
-            if (random.nextFloat() < SLEEP_PROBABILITY_WITHOUT_BALL) {
-                startSleeping();
+            // Without ball: ponder or walk
+            if (random.nextFloat() < PONDER_PROBABILITY_WITHOUT_BALL) {
+                startPondering();
             } else {
                 startWalking();
             }
@@ -163,21 +160,14 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
     private void checkForBedInteraction() {
         if (map == null) return;
         
-        // Check all entities in the map for beds
-        for (Entity entity : map.getEntities()) {
-            if (entity instanceof Bed) {
-                Bed bed = (Bed) entity;
-                if (!bed.isOccupied() && 
-                    !bed.getDraggableComponent().isBeingDragged() && 
-                    bed.isNearby(this, BED_INTERACTION_MARGIN)) {
-                    startSleepingInBed(bed);
-                    break; // Only use one bed at a time
-                }
-            }
+        Bed availableBed = EntityManager.findNearbyAvailableBed(
+            map.getEntities(), this, BED_INTERACTION_MARGIN);
+        if (availableBed != null) {
+            startSleepingInBed(availableBed);
         }
     }
     
-    private void startSleepingInBed(Bed bed) {
+    public void startSleepingInBed(Bed bed) {
         currentState = State.SLEEPING_IN_BED;
         stateTimer = 0f;
         currentBed = bed;
@@ -211,53 +201,12 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
     }
     
     public void releaseFromBed() {
-        System.out.println("=== LITTLE GUY RELEASE FROM BED ===");
-        System.out.println("Current state: " + currentState);
-        System.out.println("Current bed: " + (currentBed != null ? "exists" : "null"));
-        
         // Clear bed reference without calling back to bed (avoid circular calls)
         currentBed = null;
         bedCooldown = BED_COOLDOWN_TIME; // Start cooldown
         startIdling();
-        
-        System.out.println("After release - new state: " + currentState);
     }
     
-    private void updateCarriedByBedState() {
-        // Only release if bed is null (bed explicitly released us via onDragStart)
-        // Don't release just because bed stops being dragged - that breaks snap-to-bed
-        if (currentBed == null) {
-            System.out.println("=== CARRIED BY BED: Bed was released, exiting state ===");
-            bedCooldown = BED_COOLDOWN_TIME; // Start cooldown
-            startIdling();
-        } else {
-            // Stay positioned on the bed using unified holding system
-            if (currentBed instanceof Holder) {
-                HoldingSystem.updateHeldPosition((Holder) currentBed);
-            } else {
-                // Fallback for backwards compatibility
-                float[] bedPosition = currentBed.getSleepingPosition(this);
-                setPosition(bedPosition[0], bedPosition[1]);
-            }
-        }
-    }
-    
-    public void startBeingCarriedByBed(Bed bed) {
-        currentState = State.CARRIED_BY_BED;
-        stateTimer = 0f;
-        currentBed = bed;
-        
-        // Drop any carried ball
-        if (carriedBall != null) {
-            dropBall();
-        }
-        
-        // Show surprised mood
-        textDisplay.setMood("!", 0.9f, 2f);
-        
-        // Deactivate trail particles
-        trailEmitter.setActive(false);
-    }
     
     public Bed getCurrentBed() {
         return currentBed;
@@ -307,7 +256,7 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
         if (carriedBall != null) {
             textDisplay.setMood("hmm", 0.1f, 2f); // 10% chance when idle with ball, 2s duration
         } else {
-            textDisplay.setMood("zzz", 0.05f, 2f); // 5% chance when idle without ball, 2s duration
+            textDisplay.setMood("...", 0.05f, 2f); // 5% chance when idle without ball, 2s duration
         }
         
         // Deactivate trail particles
@@ -327,9 +276,9 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
         }
     }
     
-    private void updateSleepingState() {
-        float sleepTime = getRandomTime(MIN_SLEEP_TIME, MAX_SLEEP_TIME);
-        if (stateTimer >= sleepTime) {
+    private void updatePonderingState() {
+        float ponderTime = getRandomTime(MIN_PONDER_TIME, MAX_PONDER_TIME);
+        if (stateTimer >= ponderTime) {
             startIdling();
         }
     }
@@ -341,13 +290,13 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
         }
     }
     
-    private void startSleeping() {
-        currentState = State.SLEEPING;
+    private void startPondering() {
+        currentState = State.PONDERING;
         stateTimer = 0f;
         
-        // Always show zzz when sleeping (100% chance) - match sleep duration
-        float sleepDuration = getRandomTime(MIN_SLEEP_TIME, MAX_SLEEP_TIME);
-        textDisplay.setMood("zzz", 1.0f, sleepDuration);
+        // Show thoughtful mood (match ponder duration)
+        float ponderDuration = getRandomTime(MIN_PONDER_TIME, MAX_PONDER_TIME);
+        textDisplay.setMood("hmm", 1.0f, ponderDuration);
         
         // Deactivate trail particles
         trailEmitter.setActive(false);
@@ -356,24 +305,15 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
     private void checkForBallPickup() {
         if (map == null) return;
         
-        // Check all entities in the map for balls
-        for (Entity entity : map.getEntities()) {
-            if (entity instanceof Ball) {
-                Ball ball = (Ball) entity;
-                if (ball.isFree() && isIntersecting(ball)) {
-                    pickupBall(ball);
-                    break; // Only pick up one ball at a time
-                }
-            }
+        Ball nearbyBall = EntityManager.findNearbyPickupableBall(
+            map.getEntities(), this, COLLISION_MARGIN);
+        if (nearbyBall != null) {
+            pickupBall(nearbyBall);
         }
     }
     
     private boolean isIntersecting(Entity other) {
-        // More generous collision detection for better ball catching
-        return x - COLLISION_MARGIN < other.getX() + other.getWidth() &&
-               x + width + COLLISION_MARGIN > other.getX() &&
-               y - COLLISION_MARGIN < other.getY() + other.getHeight() &&
-               y + height + COLLISION_MARGIN > other.getY();
+        return EntityManager.areIntersecting(this, other, COLLISION_MARGIN);
     }
     
     private void pickupBall(Ball ball) {
@@ -437,17 +377,6 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
         if (currentState == State.SLEEPING_IN_BED) {
             wakeUpFromBed();
         }
-        // If being carried by bed, release from bed
-        else if (currentState == State.CARRIED_BY_BED) {
-            System.out.println("=== PLAYER DRAG START: Releasing from bed ===");
-            if (currentBed != null) {
-                System.out.println("Setting bed unoccupied and clearing bed reference");
-                currentBed.setOccupied(false, null);
-                currentBed = null;
-            }
-            bedCooldown = BED_COOLDOWN_TIME;
-            System.out.println("Player released from bed due to drag start");
-        }
         
         currentState = State.PICKED_UP;
         stateTimer = 0f;
@@ -462,43 +391,47 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
     
     @Override
     public void onDragStop() {
-        DragDropHelper.onDragStop(physicsComponent, draggableComponent, 
-                                 DragDropHelper.VelocityScales.LITTLE_GUY, 
-                                 DragDropHelper.MinThrowVelocities.LITTLE_GUY);
-        startIdling();
-        
-        // Drop any carried ball when we get thrown
-        if (carriedBall != null) {
-            dropBall();
+        // Check if dropped near a bed first - if so, skip physics and snap to bed
+        if (checkForImmediateBedSleep()) {
+            // Successfully snapped to bed - skip physics and just clean up
+            draggableComponent.stopDrag();
+            startIdling();
+            
+            // Drop any carried ball when we snap to bed
+            if (carriedBall != null) {
+                dropBall();
+            }
+        } else {
+            // No bed nearby - proceed with normal physics drop
+            DragDropHelper.onDragStop(physicsComponent, draggableComponent, 
+                                     DragDropHelper.VelocityScales.LITTLE_GUY, 
+                                     DragDropHelper.MinThrowVelocities.LITTLE_GUY);
+            startIdling();
+            
+            // Drop any carried ball when we get thrown
+            if (carriedBall != null) {
+                dropBall();
+            }
         }
-        
-        // Check for immediate attachment to nearby bed
-        checkForImmediateBedAttachment();
     }
     
-    private void checkForImmediateBedAttachment() {
-        if (map == null) return;
-        // Remove bedCooldown check for snap attachments - allow immediate snapping
+    private boolean checkForImmediateBedSleep() {
+        if (map == null) return false;
         
-        // Check all entities for nearby beds
+        // Find nearby beds that can hold (like the ball snapping)
         for (Entity entity : map.getEntities()) {
             if (entity instanceof Bed) {
                 Bed bed = (Bed) entity;
-                
-                boolean isNear = bed.isNearby(this, 35f); // Increase snap distance
-                boolean canAttach = !bed.isHolding() && 
-                                   !bed.getDraggableComponent().isBeingDragged() &&
-                                   currentState == State.IDLE;
-                
-                // Check if player is close enough and bed can hold them
-                if (isNear && canAttach) {
-                    System.out.println("=== PLAYER BED SNAP ATTACHMENT TRIGGERED ===");
-                    // Use the holding system for instant attachment
+                if (!bed.isHolding() && 
+                    !bed.getDraggableComponent().isBeingDragged() && 
+                    EntityManager.isNearby(this, bed, GameConstants.SNAP_DISTANCE)) {
+                    // Use the holding system for consistency
                     HoldingSystem.startHolding(bed, this);
-                    break; // Only attach to one bed
+                    return true; // Successfully snapped to bed
                 }
             }
         }
+        return false; // No bed found
     }
     
     public boolean isPointInside(float mouseX, float mouseY) {
@@ -528,8 +461,8 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
             shapeRenderer.setColor(0.3f, 0.3f, 0.3f, 1f); // Light gray when picked up
         } else if (currentState == State.SLEEPING_IN_BED) {
             shapeRenderer.setColor(0.1f, 0.1f, 0.1f, 1f); // Very dark when sleeping in bed
-        } else if (currentState == State.CARRIED_BY_BED) {
-            shapeRenderer.setColor(0.2f, 0.2f, 0.2f, 1f); // Dark gray when carried by bed
+        } else if (currentState == State.PONDERING) {
+            shapeRenderer.setColor(0.2f, 0.2f, 0.2f, 1f); // Dark gray when pondering
         } else {
             shapeRenderer.setColor(0f, 0f, 0f, 1f); // Black for all other states
         }
@@ -595,13 +528,14 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
     @Override
     public void startBeingHeld(Holder holder) {
         if (holder instanceof Bed) {
-            startBeingCarriedByBed((Bed) holder);
+            // This will be called by the HoldingSystem when bed picks up player
+            // The actual sleeping is handled by startSleepingInBed()
         }
     }
     
     @Override
     public void releaseFromHolder() {
-        releaseFromBed();
+        wakeUpFromBed();
     }
     
     @Override
@@ -617,11 +551,11 @@ public class LittleGuy extends Entity implements Draggable, Holder, Holdable {
     
     @Override
     public Holder getCurrentHolder() {
-        return (currentBed instanceof Holder) ? (Holder) currentBed : null;
+        return currentBed; // Bed implements Holder
     }
     
     @Override
     public boolean isBeingHeld() {
-        return currentState == State.CARRIED_BY_BED;
+        return currentState == State.SLEEPING_IN_BED;
     }
 }

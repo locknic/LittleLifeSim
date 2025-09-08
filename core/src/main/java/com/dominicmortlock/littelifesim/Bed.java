@@ -12,13 +12,13 @@ public class Bed extends Entity implements Draggable, Holder {
     private DraggableComponent draggableComponent;
     private PhysicsComponent physicsComponent;
     
-    // Visual constants  
-    private static final float PILLOW_WIDTH = 50f;
-    private static final float PILLOW_HEIGHT = 20f;
-    private static final float PILLOW_OFFSET_Y = 5f;
+    // Visual constants from GameConstants
+    private static final float PILLOW_WIDTH = GameConstants.PILLOW_WIDTH;
+    private static final float PILLOW_HEIGHT = GameConstants.PILLOW_HEIGHT;
+    private static final float PILLOW_OFFSET_Y = GameConstants.PILLOW_OFFSET_Y;
     
     public Bed(float x, float y) {
-        super(x, y, 60, 80, -1f); // Wider bed: 60 width × 80 height, Z=-1 (back layer)
+        super(x, y, GameConstants.BED_WIDTH, GameConstants.BED_HEIGHT, GameConstants.Z_BACK_LAYER);
         this.occupied = false;
         this.occupant = null;
         this.draggableComponent = new DraggableComponent(this);
@@ -69,10 +69,7 @@ public class Bed extends Entity implements Draggable, Holder {
      * Checks if an entity is close enough to interact with the bed
      */
     public boolean isNearby(Entity entity, float margin) {
-        return entity.getX() - margin < x + width &&
-               entity.getX() + entity.getWidth() + margin > x &&
-               entity.getY() - margin < y + height &&
-               entity.getY() + entity.getHeight() + margin > y;
+        return EntityManager.isNearby(entity, this, margin);
     }
     
     /**
@@ -99,30 +96,17 @@ public class Bed extends Entity implements Draggable, Holder {
     
     @Override
     public void onDragStart() {
-        System.out.println("=== BED DRAG START ===");
-        System.out.println("Bed occupied: " + occupied);
-        if (occupant != null) {
-            System.out.println("Occupant: " + occupant.getClass().getSimpleName());
-            if (occupant instanceof LittleGuy) {
-                System.out.println("LittleGuy state: " + ((LittleGuy) occupant).getCurrentState());
-            }
+        // Wake up any occupant when bed is picked up
+        if (occupied && occupant instanceof LittleGuy) {
+            ((LittleGuy) occupant).wakeUpFromBed();
         }
-        
-        // Always release any occupant when bed is picked up (use new system)
-        onHolderDragStart();
-        // Also force-stop any player pickup behavior
-        physicsComponent.stop(); // This will be called again in DragDropHelper, but ensure it's called
         DragDropHelper.onDragStart(physicsComponent, draggableComponent);
     }
     
     private void releaseOccupant() {
-        System.out.println("=== BED RELEASE OCCUPANT ===");
-        System.out.println("Occupied: " + occupied + ", Occupant: " + (occupant != null ? occupant.getClass().getSimpleName() : "null"));
-        
         if (occupied && occupant != null) {
             if (occupant instanceof LittleGuy) {
                 LittleGuy littleGuy = (LittleGuy) occupant;
-                System.out.println("Releasing LittleGuy, current state: " + littleGuy.getCurrentState());
                 
                 // Force release regardless of current state
                 littleGuy.releaseFromBed();
@@ -132,14 +116,8 @@ public class Bed extends Entity implements Draggable, Holder {
                     (float)(Math.random() - 0.5) * 200, // Random horizontal velocity -100 to +100
                     100 + (float)Math.random() * 100     // Upward velocity 100-200
                 );
-                
-                System.out.println("Player dropped with physics from bed");
-                System.out.println("After release, LittleGuy state: " + littleGuy.getCurrentState());
             }
             setOccupied(false, null);
-            System.out.println("Bed now unoccupied");
-        } else {
-            System.out.println("No occupant to release");
         }
     }
     
@@ -150,36 +128,7 @@ public class Bed extends Entity implements Draggable, Holder {
                                  DragDropHelper.MinThrowVelocities.BED);
     }
     
-    private void checkForPlayerPickup() {
-        // Check all entities in the map for LittleGuy
-        for (Entity entity : map.getEntities()) {
-            if (entity instanceof LittleGuy) {
-                LittleGuy littleGuy = (LittleGuy) entity;
-                // Check if bed overlaps with player and player isn't already in a bed
-                if (isNearby(littleGuy, 5f) && littleGuy.getCurrentBed() == null) {
-                    pickupPlayer(littleGuy);
-                    break; // Only pick up one player at a time
-                }
-            }
-        }
-    }
     
-    private void pickupPlayer(LittleGuy littleGuy) {
-        System.out.println("=== BED PICKING UP PLAYER ===");
-        System.out.println("Player state before pickup: " + littleGuy.getCurrentState());
-        
-        // Wake up the player if sleeping
-        if (littleGuy.getCurrentState() == State.SLEEPING_IN_BED) {
-            littleGuy.wakeUpFromBed();
-        }
-        
-        // Set player to be carried by bed
-        littleGuy.startBeingCarriedByBed(this);
-        setOccupied(true, littleGuy);
-        
-        System.out.println("Player state after pickup: " + littleGuy.getCurrentState());
-        System.out.println("Bed occupied: " + occupied);
-    }
     
     @Override
     public void setMap(Map map) {
@@ -191,13 +140,16 @@ public class Bed extends Entity implements Draggable, Holder {
     @Override
     public void pickupHoldable(Holdable holdable) {
         if (holdable instanceof LittleGuy) {
-            pickupPlayer((LittleGuy) holdable);
+            LittleGuy littleGuy = (LittleGuy) holdable;
+            littleGuy.startSleepingInBed(this);
         }
     }
     
     @Override
     public void dropHeldEntity() {
-        releaseOccupant();
+        if (occupied && occupant instanceof LittleGuy) {
+            ((LittleGuy) occupant).wakeUpFromBed();
+        }
     }
     
     @Override
@@ -217,6 +169,7 @@ public class Bed extends Entity implements Draggable, Holder {
     
     @Override
     public void onHolderDragStart() {
-        HoldingSystem.dropWithPhysics(this);
+        // Wake up any sleeping occupant when bed is dragged
+        dropHeldEntity();
     }
 }

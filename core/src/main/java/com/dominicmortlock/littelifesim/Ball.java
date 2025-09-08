@@ -14,12 +14,12 @@ public class Ball extends Entity implements Draggable, Holdable {
     
     // Smooth pickup transition
     private float transitionTimer;
-    private float transitionDuration = 0.3f; // 0.3 seconds to move to hand
+    private float transitionDuration = GameConstants.BALL_TRANSITION_DURATION;
     private float startX, startY; // Starting position for transition
     private float targetX, targetY; // Target position for transition
     
     public Ball(float x, float y) {
-        super(x, y, 20, 20, 1f); // 20x20 pixel ball, Z=1 (front layer)
+        super(x, y, GameConstants.BALL_SIZE, GameConstants.BALL_SIZE, GameConstants.Z_FRONT_LAYER);
         this.currentState = BallState.FREE;
         this.draggableComponent = new DraggableComponent(this);
         this.physicsComponent = new PhysicsComponent(this);
@@ -44,15 +44,9 @@ public class Ball extends Entity implements Draggable, Holdable {
             float progress = Math.min(transitionTimer / transitionDuration, 1.0f);
             
             // Calculate target position using holding system
-            if (carrier instanceof Holder) {
-                float[] targetPos = ((Holder) carrier).getHoldingPosition(this);
-                targetX = targetPos[0];
-                targetY = targetPos[1];
-            } else {
-                // Fallback for backwards compatibility
-                targetX = carrier.getX() - width / 2; // Centered on left edge
-                targetY = carrier.getY() + carrier.getHeight() / 2 - height / 2; // Halfway up
-            }
+            float[] targetPos = ((Holder) carrier).getHoldingPosition(this);
+            targetX = targetPos[0];
+            targetY = targetPos[1];
             
             // Smooth interpolation with easing
             float easeProgress = 1f - (1f - progress) * (1f - progress); // Ease out
@@ -70,14 +64,7 @@ public class Ball extends Entity implements Draggable, Holdable {
         // Update position if being carried (only if not in physics mode)
         if (currentState == BallState.CARRIED && carrier != null && !physicsComponent.isActive()) {
             // Use unified holding system for positioning
-            if (carrier instanceof Holder) {
-                HoldingSystem.updateHeldPosition((Holder) carrier);
-            } else {
-                // Fallback to old positioning for backwards compatibility
-                float carrierX = carrier.getX() - width / 2; // Centered on left edge
-                float carrierY = carrier.getY() + carrier.getHeight() / 2 - height / 2; // Halfway up
-                setPosition(carrierX, carrierY);
-            }
+            HoldingSystem.updateHeldPosition((Holder) carrier);
         }
         
         // Check for snap attachment every frame if ball is free and physics isn't active
@@ -141,33 +128,13 @@ public class Ball extends Entity implements Draggable, Holdable {
     private void checkForImmediatePlayerAttachment() {
         if (map == null || currentState != BallState.FREE) return;
         
-        // Check all entities for nearby LittleGuy
-        for (Entity entity : map.getEntities()) {
-            if (entity instanceof LittleGuy) {
-                LittleGuy littleGuy = (LittleGuy) entity;
-                
-                boolean isNear = isNearEntity(littleGuy, 40f); // Increase snap distance
-                boolean canPickup = littleGuy.getCurrentState() == State.IDLE || 
-                                   littleGuy.getCurrentState() == State.WALKING || 
-                                   littleGuy.getCurrentState() == State.SLEEPING;
-                
-                // Check if ball is close enough and player can pick it up
-                if (isNear && canPickup) {
-                    System.out.println("=== BALL SNAP ATTACHMENT TRIGGERED ===");
-                    // Use the holding system for instant attachment
-                    HoldingSystem.startHolding(littleGuy, this);
-                    break; // Only attach to one player
-                }
-            }
+        LittleGuy nearbyLittleGuy = EntityManager.findNearbyAvailableLittleGuy(
+            map.getEntities(), this, GameConstants.BALL_SNAP_DISTANCE);
+        if (nearbyLittleGuy != null) {
+            HoldingSystem.startHolding(nearbyLittleGuy, this);
         }
     }
     
-    private boolean isNearEntity(Entity entity, float margin) {
-        return entity.getX() - margin < x + width &&
-               entity.getX() + entity.getWidth() + margin > x &&
-               entity.getY() - margin < y + height &&
-               entity.getY() + entity.getHeight() + margin > y;
-    }
     
     // Ball-specific methods
     public void startCarried(Entity carrier) {
@@ -244,7 +211,7 @@ public class Ball extends Entity implements Draggable, Holdable {
     
     @Override
     public Holder getCurrentHolder() {
-        return (carrier instanceof Holder) ? (Holder) carrier : null;
+        return (Holder) carrier; // Carriers (LittleGuy) implement Holder
     }
     
     @Override

@@ -5,7 +5,6 @@ public enum State {
     WALKING,
     PICKED_UP,
     THROWING,
-    SLEEPING,
-    SLEEPING_IN_BED,
-    CARRIED_BY_BED
+    PONDERING,
+    SLEEPING_IN_BED
 }

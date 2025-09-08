@@ -20,12 +20,12 @@ public class DraggableComponent {
     
     private Random random;
     
-    // Physics constants
-    private static final float ROTATION_SENSITIVITY = 0.08f; // How much drag affects rotation
-    private static final float ANGULAR_DAMPING = 0.96f; // Higher damping for controlled oscillation
-    private static final float GRAVITY_TORQUE = 15f; // Moderate spring force for proper pendulum motion
-    private static final float MAX_ROTATION = (float) Math.PI / 6; // Maximum rotation (30 degrees)
-    private static final float DROP_FALL_VELOCITY = -100f; // Downward velocity when dropped
+    // Physics constants from GameConstants
+    private static final float ROTATION_SENSITIVITY = GameConstants.ROTATION_SENSITIVITY;
+    private static final float ANGULAR_DAMPING = GameConstants.ANGULAR_DAMPING;
+    private static final float GRAVITY_TORQUE = GameConstants.GRAVITY_TORQUE;
+    private static final float MAX_ROTATION = GameConstants.MAX_ROTATION;
+    private static final float DROP_FALL_VELOCITY = GameConstants.DROP_FALL_VELOCITY;
     
     public DraggableComponent(Entity owner) {
         this.owner = owner;

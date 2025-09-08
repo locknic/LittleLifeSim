@@ -7,41 +7,29 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
 
 /**
- * Main game class that handles the core game loop, rendering, and input.
- * Manages the interaction between LittleGuy and Ball entities through dragging mechanics.
+ * Main game class that handles the core game loop and rendering.
+ * Uses InputManager for input handling to keep this class focused on game logic.
  */
 public class Main extends ApplicationAdapter {
-    // Window and game constants
-    private static final int WINDOW_WIDTH = 800;
-    private static final int WINDOW_HEIGHT = 600;
-    private static final float LITTLE_GUY_GRAB_RATIO = 0.8f;
-    private static final float BALL_GRAB_RATIO = 0.5f;
-    
     private ShapeRenderer shapeRenderer;
     private Map map;
-    private LittleGuy littleGuy;
-    private Ball ball;
-    private Bed bed;
-    private Draggable currentlyDragged;
-    private boolean isDragging;
-    private float dragOffsetX, dragOffsetY;
+    private InputManager inputManager;
 
     @Override
     public void create() {
         shapeRenderer = new ShapeRenderer();
-        map = new Map(WINDOW_WIDTH, WINDOW_HEIGHT);
+        map = new Map(GameConstants.WINDOW_WIDTH, GameConstants.WINDOW_HEIGHT);
+        inputManager = new InputManager();
         
-        littleGuy = new LittleGuy(380, 270);
+        // Create entities
+        LittleGuy littleGuy = new LittleGuy(380, 270);
         map.addEntity(littleGuy);
         
-        ball = new Ball(200, 200);
+        Ball ball = new Ball(200, 200);
         map.addEntity(ball);
         
-        bed = new Bed(600, 100);
+        Bed bed = new Bed(600, 100);
         map.addEntity(bed);
-        
-        isDragging = false;
-        currentlyDragged = null;
     }
 
     @Override
@@ -49,7 +37,7 @@ public class Main extends ApplicationAdapter {
         float deltaTime = Gdx.graphics.getDeltaTime();
         
         // Handle mouse input
-        handleMouseInput();
+        inputManager.handleInput(map.getEntities());
         
         // Update game logic
         map.updateAll(deltaTime);
@@ -59,108 +47,6 @@ public class Main extends ApplicationAdapter {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         map.renderAll(shapeRenderer);
         shapeRenderer.end();
-    }
-    
-    private void handleMouseInput() {
-        float mouseX = Gdx.input.getX();
-        float mouseY = WINDOW_HEIGHT - Gdx.input.getY(); // Flip Y coordinate (LibGDX uses bottom-left origin)
-        
-        if (Gdx.input.justTouched()) {
-            // Check draggable entities in priority order
-            Draggable clickedEntity = null;
-            
-            System.out.println("=== CLICK DEBUG ===");
-            System.out.println("Mouse: (" + mouseX + ", " + mouseY + ")");
-            System.out.println("LittleGuy state: " + littleGuy.getCurrentState());
-            System.out.println("Ball inside: " + ball.isPointInside(mouseX, mouseY));
-            System.out.println("LittleGuy inside: " + littleGuy.isPointInside(mouseX, mouseY));
-            System.out.println("Bed inside: " + bed.isPointInside(mouseX, mouseY));
-            System.out.println("Bed occupied: " + bed.isOccupied());
-            
-            // Check ball first (highest priority)
-            if (ball.isPointInside(mouseX, mouseY)) {
-                clickedEntity = ball;
-                System.out.println("Selected: BALL");
-            }
-            // Special case: if little guy is being carried by bed, prioritize bed over little guy
-            else if (littleGuy.getCurrentState() == State.CARRIED_BY_BED && bed.isPointInside(mouseX, mouseY)) {
-                clickedEntity = bed;
-                System.out.println("Selected: BED (carrying player)");
-            }
-            // Then check little guy (normal priority)
-            else if (littleGuy.isPointInside(mouseX, mouseY)) {
-                clickedEntity = littleGuy;
-                System.out.println("Selected: LITTLE_GUY");
-            }
-            // Finally check bed (lowest priority, unless carrying player)
-            else if (bed.isPointInside(mouseX, mouseY)) {
-                clickedEntity = bed;
-                System.out.println("Selected: BED (normal)");
-            }
-            
-            if (clickedEntity == null) {
-                System.out.println("Selected: NOTHING");
-            }
-            
-            if (clickedEntity != null) {
-                isDragging = true;
-                currentlyDragged = clickedEntity;
-                clickedEntity.onDragStart();
-                
-                // Snap entity position based on type
-                snapEntityToMouse(clickedEntity, mouseX, mouseY);
-            }
-        }
-        
-        if (isDragging && currentlyDragged != null) {
-            if (Gdx.input.isTouched()) {
-                // Update dragged entity position
-                updateDraggedEntityPosition(mouseX, mouseY);
-            } else {
-                // Mouse released - drop the entity
-                isDragging = false;
-                currentlyDragged.onDragStop();
-                currentlyDragged = null;
-            }
-        }
-    }
-
-    private void snapEntityToMouse(Draggable entity, float mouseX, float mouseY) {
-        if (entity == littleGuy) {
-            // Snap little guy so mouse is center-x and at grab point
-            float newX = mouseX - littleGuy.getWidth() / 2;
-            float newY = mouseY - littleGuy.getHeight() * LITTLE_GUY_GRAB_RATIO;
-            littleGuy.setPosition(newX, newY);
-            dragOffsetX = littleGuy.getWidth() / 2;
-            dragOffsetY = littleGuy.getHeight() * LITTLE_GUY_GRAB_RATIO;
-        } else if (entity == ball) {
-            // Snap ball so mouse is at center
-            float newX = mouseX - ball.getWidth() * BALL_GRAB_RATIO;
-            float newY = mouseY - ball.getHeight() * BALL_GRAB_RATIO;
-            ball.setPosition(newX, newY);
-            dragOffsetX = ball.getWidth() * BALL_GRAB_RATIO;
-            dragOffsetY = ball.getHeight() * BALL_GRAB_RATIO;
-        } else if (entity == bed) {
-            // Snap bed so mouse is at center
-            float newX = mouseX - bed.getWidth() / 2;
-            float newY = mouseY - bed.getHeight() / 2;
-            bed.setPosition(newX, newY);
-            dragOffsetX = bed.getWidth() / 2;
-            dragOffsetY = bed.getHeight() / 2;
-        }
-    }
-    
-    private void updateDraggedEntityPosition(float mouseX, float mouseY) {
-        float newX = mouseX - dragOffsetX;
-        float newY = mouseY - dragOffsetY;
-        
-        if (currentlyDragged == littleGuy) {
-            littleGuy.setPosition(newX, newY);
-        } else if (currentlyDragged == ball) {
-            ball.setPosition(newX, newY);
-        } else if (currentlyDragged == bed) {
-            bed.setPosition(newX, newY);
-        }
     }
 
     @Override

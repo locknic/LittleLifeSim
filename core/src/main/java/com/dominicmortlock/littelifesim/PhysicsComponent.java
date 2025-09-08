@@ -14,20 +14,20 @@ public class PhysicsComponent {
     private boolean hasPhysics;
     private Map map; // For boundary checking
     
-    // Physics constants
-    private static final float GRAVITY = -300f;
-    private static final float BOUNCE_DAMPING = 0.6f;
-    private static final float WALL_BOUNCE_DAMPING = 0.5f;
-    private static final float FRICTION = 0.8f;
-    private static final float MIN_BOUNCE_VELOCITY = 20f;
-    private static final float DUST_VELOCITY_THRESHOLD = 50f;
+    // Physics constants from GameConstants
+    private static final float GRAVITY = GameConstants.GRAVITY;
+    private static final float BOUNCE_DAMPING = GameConstants.BOUNCE_DAMPING;
+    private static final float WALL_BOUNCE_DAMPING = GameConstants.WALL_BOUNCE_DAMPING;
+    private static final float FRICTION = GameConstants.FRICTION;
+    private static final float MIN_BOUNCE_VELOCITY = GameConstants.MIN_BOUNCE_VELOCITY;
+    private static final float DUST_VELOCITY_THRESHOLD = GameConstants.DUST_VELOCITY_THRESHOLD;
     
-    // Particle constants
-    private static final int MAX_DUST_PARTICLES = 2;
-    private static final float DUST_SPREAD_RADIUS = 15f;
-    private static final float DUST_VERTICAL_SPREAD = 8f;
-    private static final float DUST_MIN_SPEED = 25f;
-    private static final float DUST_MAX_SPEED = 60f;
+    // Particle constants from GameConstants
+    private static final int MAX_DUST_PARTICLES = GameConstants.MAX_DUST_PARTICLES;
+    private static final float DUST_SPREAD_RADIUS = GameConstants.DUST_SPREAD_RADIUS;
+    private static final float DUST_VERTICAL_SPREAD = GameConstants.DUST_VERTICAL_SPREAD;
+    private static final float DUST_MIN_SPEED = GameConstants.DUST_MIN_SPEED;
+    private static final float DUST_MAX_SPEED = GameConstants.DUST_MAX_SPEED;
     
     public PhysicsComponent(Entity owner) {
         this.owner = owner;

@@ -21,12 +21,12 @@ public class TextDisplay {
     private Random random;
     private static Map<Character, float[][]> characterPatterns;
     
-    // Visual properties
-    private static final float OFFSET_X = 5f;
-    private static final float OFFSET_Y = 15f;
-    private static final float CHAR_WIDTH = 12f;
-    private static final float CHAR_HEIGHT = 16f;
-    private static final float BOLD_THICKNESS = 2f;
+    // Visual properties from GameConstants
+    private static final float OFFSET_X = GameConstants.TEXT_OFFSET_X;
+    private static final float OFFSET_Y = GameConstants.TEXT_OFFSET_Y;
+    private static final float CHAR_WIDTH = GameConstants.CHAR_WIDTH;
+    private static final float CHAR_HEIGHT = GameConstants.CHAR_HEIGHT;
+    private static final float BOLD_THICKNESS = GameConstants.BOLD_THICKNESS;
     
     static {
         initializeCharacterPatterns();
