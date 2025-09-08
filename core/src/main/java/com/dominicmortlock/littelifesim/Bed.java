@@ -68,10 +68,6 @@ public class Bed extends Entity implements Draggable {
         return occupant;
     }
     
-    public DraggableComponent getDraggableComponent() {
-        return draggableComponent;
-    }
-    
     /**
      * Checks if an entity is close enough to interact with the bed
      */
